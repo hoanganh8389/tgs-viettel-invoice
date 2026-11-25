@@ -192,7 +192,7 @@ class TGS_Viettel_Portal_Mailer
                 'Referer'      => self::BASE . '/account/login',
                 'Connection'   => 'keep-alive',
             ],
-            'body' => wp_json_encode([
+            'body' => TGS_Viettel_Invoice_Json::encode([
                 'username'   => $cfg['username'],
                 'password'   => $cfg['password'],
                 'rememberMe' => false,
@@ -361,7 +361,7 @@ class TGS_Viettel_Portal_Mailer
                 'Referer'       => self::BASE . '/invoice-management/invoice',
                 'Connection'    => 'keep-alive',
             ],
-            'body' => wp_json_encode([
+            'body' => TGS_Viettel_Invoice_Json::encode([
                 'id'                => (int) $id,
                 'buyerEmailAddress' => implode(';', $emails),
             ], JSON_UNESCAPED_UNICODE),

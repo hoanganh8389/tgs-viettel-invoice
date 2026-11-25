@@ -1238,17 +1238,29 @@ class TGS_Viettel_Invoice_Return_Adjustment
             wp_send_json_error(['message' => 'Nonce không hợp lệ.'], 403);
         }
 
+        TGS_Viettel_Invoice_Pos_Service::send($this->core_preview($_POST));
+    }
+
+    /**
+     * Lõi của ajax_preview (dùng chung AJAX + TGS_Viettel_Invoice_Pos_Service). $in = trường form dạng đã slash như $_POST.
+     * Trả TGS_Viettel_Invoice_Pos_Service::ok()/fail() — không in, không dừng yêu cầu.
+     *
+     * @internal Gọi qua TGS_Viettel_Invoice_Pos_Service.
+     * @return array{success: bool, data: mixed, status: int|null}
+     */
+    public function core_preview(array $in)
+    {
         $can_use_pos = class_exists('TGS_POS_Permission')
             ? TGS_POS_Permission::current_user_can_use_pos()
             : (is_user_logged_in() && current_user_can('read'));
         if (!$can_use_pos) {
-            wp_send_json_error(['message' => 'Bạn không có quyền xem hóa đơn điều chỉnh.'], 403);
+            return TGS_Viettel_Invoice_Pos_Service::fail(['message' => 'Bạn không có quyền xem hóa đơn điều chỉnh.'], 403);
         }
 
-        $queue_id = intval($_POST['queue_id'] ?? 0);
+        $queue_id = intval($in['queue_id'] ?? 0);
         $queue = $queue_id > 0 ? $this->get_queue($queue_id) : [];
         if (empty($queue)) {
-            wp_send_json_error(['message' => 'Không tìm thấy yêu cầu điều chỉnh của shop hiện tại.'], 404);
+            return TGS_Viettel_Invoice_Pos_Service::fail(['message' => 'Không tìm thấy yêu cầu điều chỉnh của shop hiện tại.'], 404);
         }
 
         $original = $this->get_invoice_record(intval($queue['original_invoice_record_id'] ?? 0));
@@ -1263,12 +1275,12 @@ class TGS_Viettel_Invoice_Return_Adjustment
             }
         }
         if (empty($original)) {
-            wp_send_json_error(['message' => 'Không tìm thấy hóa đơn bán gốc để dựng preview.'], 404);
+            return TGS_Viettel_Invoice_Pos_Service::fail(['message' => 'Không tìm thấy hóa đơn bán gốc để dựng preview.'], 404);
         }
 
         $built = $this->build_payload($queue, $original);
         if (empty($built['success'])) {
-            wp_send_json_error([
+            return TGS_Viettel_Invoice_Pos_Service::fail([
                 'message' => (string) ($built['message'] ?? 'Không dựng được preview hóa đơn điều chỉnh.'),
             ], 400);
         }
@@ -1283,7 +1295,7 @@ class TGS_Viettel_Invoice_Return_Adjustment
             $preview['status'] = 'blocked';
             $preview['message'] = (string) ($queue['error_message'] ?? 'Hóa đơn gốc chưa sẵn sàng để điều chỉnh.');
         }
-        wp_send_json_success($preview);
+        return TGS_Viettel_Invoice_Pos_Service::ok($preview);
     }
 
     public function ajax_confirm()
@@ -1298,22 +1310,34 @@ class TGS_Viettel_Invoice_Return_Adjustment
             wp_send_json_error(['message' => 'Nonce không hợp lệ.'], 403);
         }
 
+        TGS_Viettel_Invoice_Pos_Service::send($this->core_confirm($_POST));
+    }
+
+    /**
+     * Lõi của ajax_confirm (dùng chung AJAX + TGS_Viettel_Invoice_Pos_Service). $in = trường form dạng đã slash như $_POST.
+     * Trả TGS_Viettel_Invoice_Pos_Service::ok()/fail() — không in, không dừng yêu cầu.
+     *
+     * @internal Gọi qua TGS_Viettel_Invoice_Pos_Service.
+     * @return array{success: bool, data: mixed, status: int|null}
+     */
+    public function core_confirm(array $in)
+    {
         $can_use_pos = class_exists('TGS_POS_Permission')
             ? TGS_POS_Permission::current_user_can_use_pos()
             : (is_user_logged_in() && current_user_can('read'));
         if (!$can_use_pos) {
-            wp_send_json_error(['message' => 'Bạn không có quyền xác nhận hóa đơn điều chỉnh.'], 403);
+            return TGS_Viettel_Invoice_Pos_Service::fail(['message' => 'Bạn không có quyền xác nhận hóa đơn điều chỉnh.'], 403);
         }
 
-        $queue_id = intval($_POST['queue_id'] ?? 0);
+        $queue_id = intval($in['queue_id'] ?? 0);
         if ($queue_id <= 0 || empty($this->get_queue($queue_id))) {
-            wp_send_json_error(['message' => 'Không tìm thấy yêu cầu điều chỉnh của shop hiện tại.'], 404);
+            return TGS_Viettel_Invoice_Pos_Service::fail(['message' => 'Không tìm thấy yêu cầu điều chỉnh của shop hiện tại.'], 404);
         }
 
         $result = $this->process($queue_id);
         if (($result['status'] ?? '') === 'done') {
-            wp_send_json_success($result);
+            return TGS_Viettel_Invoice_Pos_Service::ok($result);
         }
-        wp_send_json_error($result, 400);
+        return TGS_Viettel_Invoice_Pos_Service::fail($result, 400);
     }
 }

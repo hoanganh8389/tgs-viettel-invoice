@@ -53,6 +53,12 @@ if (file_exists($tgs_viettel_replacement_file)) {
     require_once $tgs_viettel_replacement_file;
 }
 
+// Mã hoá JSON thân yêu cầu gửi Viettel (không phụ thuộc serialize_precision) — các lời gọi API bắt buộc có.
+require_once TGS_VIETTEL_INVOICE_PLUGIN_DIR . 'includes/class-tgs-viettel-invoice-json.php';
+
+// Hàm dịch vụ công khai cho POS (REST tgs_pos gọi thẳng) + kết quả chung cho handler AJAX — handler bắt buộc có.
+require_once TGS_VIETTEL_INVOICE_PLUGIN_DIR . 'includes/class-tgs-viettel-invoice-pos-service.php';
+
 class TGS_Viettel_Invoice_Plugin
 {
     const OPTION_SETTINGS = 'tgs_viettel_invoice_settings';
@@ -855,23 +861,32 @@ class TGS_Viettel_Invoice_Plugin
             return;
         }
 
+        TGS_Viettel_Invoice_Pos_Service::send($this->core_get_sale_debug_log($_POST));
+    }
+
+    /**
+     * Lõi của ajax_get_sale_debug_log (dùng chung AJAX + TGS_Viettel_Invoice_Pos_Service). $in = trường form dạng đã slash như $_POST.
+     * Trả TGS_Viettel_Invoice_Pos_Service::ok()/fail() — không in, không dừng yêu cầu.
+     *
+     * @internal Gọi qua TGS_Viettel_Invoice_Pos_Service.
+     * @return array{success: bool, data: mixed, status: int|null}
+     */
+    public function core_get_sale_debug_log(array $in)
+    {
         if (!$this->current_user_can_use_pos()) {
-            wp_send_json_error(['message' => 'Bạn không có quyền xem nhật ký.'], 403);
-            return;
+            return TGS_Viettel_Invoice_Pos_Service::fail(['message' => 'Bạn không có quyền xem nhật ký.'], 403);
         }
 
         if (!defined('TGS_TABLE_LOCAL_VIETTEL_INVOICE') || !defined('TGS_TABLE_LOCAL_VIETTEL_INVOICE_LOG')) {
-            wp_send_json_error(['message' => 'Chưa tìm thấy bảng log Viettel Invoice.'], 500);
-            return;
+            return TGS_Viettel_Invoice_Pos_Service::fail(['message' => 'Chưa tìm thấy bảng log Viettel Invoice.'], 500);
         }
 
-        $sale_ledger_id = intval($_POST['sale_ledger_id'] ?? 0);
+        $sale_ledger_id = intval($in['sale_ledger_id'] ?? 0);
         if ($sale_ledger_id <= 0) {
-            wp_send_json_error(['message' => 'Thiếu sale_ledger_id.'], 400);
-            return;
+            return TGS_Viettel_Invoice_Pos_Service::fail(['message' => 'Thiếu sale_ledger_id.'], 400);
         }
 
-        $limit = intval($_POST['limit'] ?? 30);
+        $limit = intval($in['limit'] ?? 30);
         if ($limit <= 0 || $limit > 100) {
             $limit = 30;
         }
@@ -960,7 +975,7 @@ class TGS_Viettel_Invoice_Plugin
             );
         }
 
-        wp_send_json_success([
+        return TGS_Viettel_Invoice_Pos_Service::ok([
             'sale_ledger_id' => $sale_ledger_id,
             'latest_invoice' => is_array($latest_invoice) ? $latest_invoice : null,
             'logs' => is_array($logs) ? $logs : [],
@@ -982,23 +997,33 @@ class TGS_Viettel_Invoice_Plugin
             return;
         }
 
+        TGS_Viettel_Invoice_Pos_Service::send($this->core_pos_list_statuses($_POST));
+    }
+
+    /**
+     * Lõi của ajax_pos_list_statuses (dùng chung AJAX + TGS_Viettel_Invoice_Pos_Service). $in = trường form dạng đã slash như $_POST.
+     * Trả TGS_Viettel_Invoice_Pos_Service::ok()/fail() — không in, không dừng yêu cầu.
+     *
+     * @internal Gọi qua TGS_Viettel_Invoice_Pos_Service.
+     * @return array{success: bool, data: mixed, status: int|null}
+     */
+    public function core_pos_list_statuses(array $in)
+    {
         if (!$this->current_user_can_use_pos()) {
-            wp_send_json_error(['message' => 'Bạn không có quyền xem danh sách.'], 403);
-            return;
+            return TGS_Viettel_Invoice_Pos_Service::fail(['message' => 'Bạn không có quyền xem danh sách.'], 403);
         }
 
         if (!defined('TGS_TABLE_LOCAL_VIETTEL_INVOICE') || !defined('TGS_TABLE_LOCAL_LEDGER')) {
-            wp_send_json_error(['message' => 'Chưa tìm thấy bảng dữ liệu cần thiết.'], 500);
-            return;
+            return TGS_Viettel_Invoice_Pos_Service::fail(['message' => 'Chưa tìm thấy bảng dữ liệu cần thiết.'], 500);
         }
 
         global $wpdb;
 
-        $status_filter = isset($_POST['status']) ? sanitize_text_field(wp_unslash($_POST['status'])) : 'all';
-        $age_filter    = isset($_POST['age_filter']) ? sanitize_text_field(wp_unslash($_POST['age_filter'])) : 'all';
-        $document_filter = isset($_POST['document_type']) ? sanitize_key(wp_unslash($_POST['document_type'])) : 'all';
-        $date_from     = isset($_POST['date_from']) ? sanitize_text_field(wp_unslash($_POST['date_from'])) : '';
-        $date_to       = isset($_POST['date_to'])   ? sanitize_text_field(wp_unslash($_POST['date_to']))   : '';
+        $status_filter = isset($in['status']) ? sanitize_text_field(wp_unslash($in['status'])) : 'all';
+        $age_filter    = isset($in['age_filter']) ? sanitize_text_field(wp_unslash($in['age_filter'])) : 'all';
+        $document_filter = isset($in['document_type']) ? sanitize_key(wp_unslash($in['document_type'])) : 'all';
+        $date_from     = isset($in['date_from']) ? sanitize_text_field(wp_unslash($in['date_from'])) : '';
+        $date_to       = isset($in['date_to'])   ? sanitize_text_field(wp_unslash($in['date_to']))   : '';
 
         // Validate YYYY-MM-DD format
         if ($date_from && !preg_match('/^\d{4}-\d{2}-\d{2}$/', $date_from)) $date_from = '';
@@ -1474,7 +1499,7 @@ class TGS_Viettel_Invoice_Plugin
         });
         $rows = array_slice($rows, 0, $limit);
 
-        wp_send_json_success([
+        return TGS_Viettel_Invoice_Pos_Service::ok([
             'items'         => is_array($rows) ? $rows : [],
             'status_filter' => $status_filter,
             'document_type_filter' => $document_filter,
@@ -1522,15 +1547,27 @@ class TGS_Viettel_Invoice_Plugin
             return;
         }
 
-        $sale_ledger_id = intval($_REQUEST['sale_ledger_id'] ?? 0);
+        TGS_Viettel_Invoice_Pos_Service::send($this->core_pos_get_items_for_review($_REQUEST));
+    }
+
+    /**
+     * Lõi của ajax_pos_get_items_for_review (dùng chung AJAX + TGS_Viettel_Invoice_Pos_Service). $in = trường form dạng đã slash như $_REQUEST.
+     * Trả TGS_Viettel_Invoice_Pos_Service::ok()/fail() — không in, không dừng yêu cầu.
+     *
+     * @internal Gọi qua TGS_Viettel_Invoice_Pos_Service.
+     * @return array{success: bool, data: mixed, status: int|null}
+     */
+    public function core_pos_get_items_for_review(array $in)
+    {
+        global $wpdb;
+
+        $sale_ledger_id = intval($in['sale_ledger_id'] ?? 0);
         if ($sale_ledger_id <= 0) {
-            wp_send_json_error(['message' => 'Thiếu sale_ledger_id.']);
-            return;
+            return TGS_Viettel_Invoice_Pos_Service::fail(['message' => 'Thiếu sale_ledger_id.']);
         }
 
         if (!defined('TGS_TABLE_LOCAL_LEDGER') || !defined('TGS_TABLE_LOCAL_LEDGER_ITEM')) {
-            wp_send_json_error(['message' => 'Thiếu hằng số bảng dữ liệu.']);
-            return;
+            return TGS_Viettel_Invoice_Pos_Service::fail(['message' => 'Thiếu hằng số bảng dữ liệu.']);
         }
 
         // Lấy item_ids + thông tin phiếu bán (bao gồm code + ngày + person_id cho preview)
@@ -1540,8 +1577,7 @@ class TGS_Viettel_Invoice_Plugin
         );
 
         if (empty($sale)) {
-            wp_send_json_error(['message' => 'Không tìm thấy đơn bán hàng.']);
-            return;
+            return TGS_Viettel_Invoice_Pos_Service::fail(['message' => 'Không tìm thấy đơn bán hàng.']);
         }
 
         $item_ids = is_string($sale['local_ledger_item_id']) ? json_decode($sale['local_ledger_item_id'], true) : [];
@@ -1556,7 +1592,7 @@ class TGS_Viettel_Invoice_Plugin
          * "không có gì phải gửi thuế" — xem tgs_pos/docs/bill-z-va-hang-tang.md.
          */
         if (empty($item_ids)) {
-            wp_send_json_success([
+            return TGS_Viettel_Invoice_Pos_Service::ok([
                 'gift_items' => [],
                 'main_items' => [],
                 'all_items'  => [],
@@ -1569,7 +1605,6 @@ class TGS_Viettel_Invoice_Plugin
                 'sale_date'     => (string) ($sale['created_at'] ?? ''),
                 'customer'      => ['name' => 'Khách lẻ', 'phone' => '', 'address' => '', 'tax_code' => '', 'company_name' => '', 'email' => ''],
             ]);
-            return;
         }
 
         // --- Thông tin khách hàng cho preview hóa đơn (không lưu backend) ---
@@ -1665,14 +1700,13 @@ class TGS_Viettel_Invoice_Plugin
         }
 
         if (empty($rows)) {
-            wp_send_json_success([
+            return TGS_Viettel_Invoice_Pos_Service::ok([
                 'gift_items' => [],
                 'main_items' => [],
                 'all_items'  => [],
                 'has_under24_main' => false,
                 'under24_main_skus' => [],
             ]);
-            return;
         }
 
         // Tìm SKU dưới 24 tháng
@@ -1799,7 +1833,7 @@ class TGS_Viettel_Invoice_Plugin
          */
         $promo_split = $this->load_promo_split_ticket($sale_ledger_id);
 
-        wp_send_json_success([
+        return TGS_Viettel_Invoice_Pos_Service::ok([
             'gift_items'               => $gift_items,
             'main_items'               => $main_items,
             'all_items'                => $all_items,
@@ -1949,28 +1983,38 @@ class TGS_Viettel_Invoice_Plugin
             return;
         }
 
-        $sale_ledger_id = intval($_REQUEST['sale_ledger_id'] ?? 0);
+        TGS_Viettel_Invoice_Pos_Service::send($this->core_pos_update_danger_flags($_REQUEST));
+    }
+
+    /**
+     * Lõi của ajax_pos_update_danger_flags (dùng chung AJAX + TGS_Viettel_Invoice_Pos_Service). $in = trường form dạng đã slash như $_REQUEST.
+     * Trả TGS_Viettel_Invoice_Pos_Service::ok()/fail() — không in, không dừng yêu cầu.
+     *
+     * @internal Gọi qua TGS_Viettel_Invoice_Pos_Service.
+     * @return array{success: bool, data: mixed, status: int|null}
+     */
+    public function core_pos_update_danger_flags(array $in)
+    {
+        global $wpdb;
+
+        $sale_ledger_id = intval($in['sale_ledger_id'] ?? 0);
         if ($sale_ledger_id <= 0) {
-            wp_send_json_error(['message' => 'Thiếu sale_ledger_id.']);
-            return;
+            return TGS_Viettel_Invoice_Pos_Service::fail(['message' => 'Thiếu sale_ledger_id.']);
         }
 
-        $flags_raw = sanitize_text_field($_REQUEST['item_flags'] ?? '');
+        $flags_raw = sanitize_text_field($in['item_flags'] ?? '');
         $flags = json_decode($flags_raw, true);
 
         if (!is_array($flags) || empty($flags)) {
-            wp_send_json_success(['message' => 'Không có cờ nào cần cập nhật.', 'updated' => 0]);
-            return;
+            return TGS_Viettel_Invoice_Pos_Service::ok(['message' => 'Không có cờ nào cần cập nhật.', 'updated' => 0]);
         }
 
         if (!defined('TGS_TABLE_LOCAL_LEDGER_ITEM')) {
-            wp_send_json_error(['message' => 'Thiếu hằng số bảng dữ liệu.']);
-            return;
+            return TGS_Viettel_Invoice_Pos_Service::fail(['message' => 'Thiếu hằng số bảng dữ liệu.']);
         }
 
         if (!$this->flow_service->local_ledger_item_column_exists('local_ledger_item_is_under24_promo_danger')) {
-            wp_send_json_error(['message' => 'Cột local_ledger_item_is_under24_promo_danger chưa tồn tại. Cần chạy migration DB.']);
-            return;
+            return TGS_Viettel_Invoice_Pos_Service::fail(['message' => 'Cột local_ledger_item_is_under24_promo_danger chưa tồn tại. Cần chạy migration DB.']);
         }
 
         $updated = 0;
@@ -1995,7 +2039,7 @@ class TGS_Viettel_Invoice_Plugin
             }
         }
 
-        wp_send_json_success(['message' => "Đã cập nhật $updated dòng.", 'updated' => $updated]);
+        return TGS_Viettel_Invoice_Pos_Service::ok(['message' => "Đã cập nhật $updated dòng.", 'updated' => $updated]);
     }
 
     /**
@@ -2015,20 +2059,29 @@ class TGS_Viettel_Invoice_Plugin
             return;
         }
 
+        TGS_Viettel_Invoice_Pos_Service::send($this->core_pos_retry_invoice($_POST));
+    }
+
+    /**
+     * Lõi của ajax_pos_retry_invoice (dùng chung AJAX + TGS_Viettel_Invoice_Pos_Service). $in = trường form dạng đã slash như $_POST.
+     * Trả TGS_Viettel_Invoice_Pos_Service::ok()/fail() — không in, không dừng yêu cầu.
+     *
+     * @internal Gọi qua TGS_Viettel_Invoice_Pos_Service.
+     * @return array{success: bool, data: mixed, status: int|null}
+     */
+    public function core_pos_retry_invoice(array $in)
+    {
         if (!$this->current_user_can_use_pos()) {
-            wp_send_json_error(['message' => 'Bạn không có quyền gửi lại hóa đơn.'], 403);
-            return;
+            return TGS_Viettel_Invoice_Pos_Service::fail(['message' => 'Bạn không có quyền gửi lại hóa đơn.'], 403);
         }
 
         if (!defined('TGS_TABLE_LOCAL_VIETTEL_INVOICE')) {
-            wp_send_json_error(['message' => 'Chưa tìm thấy bảng theo dõi hóa đơn Viettel.'], 500);
-            return;
+            return TGS_Viettel_Invoice_Pos_Service::fail(['message' => 'Chưa tìm thấy bảng theo dõi hóa đơn Viettel.'], 500);
         }
 
-        $sale_ledger_id = intval($_POST['sale_ledger_id'] ?? 0);
+        $sale_ledger_id = intval($in['sale_ledger_id'] ?? 0);
         if ($sale_ledger_id <= 0) {
-            wp_send_json_error(['message' => 'Thiếu sale_ledger_id để gửi lại.'], 400);
-            return;
+            return TGS_Viettel_Invoice_Pos_Service::fail(['message' => 'Thiếu sale_ledger_id để gửi lại.'], 400);
         }
 
         global $wpdb;
@@ -2053,11 +2106,10 @@ class TGS_Viettel_Invoice_Plugin
 
         $process_lock = $this->acquire_sale_invoice_lock($sale_ledger_id);
         if ($process_lock === '') {
-            wp_send_json_error([
+            return TGS_Viettel_Invoice_Pos_Service::fail([
                 'message' => 'Hóa đơn của đơn này đang được xử lý. Vui lòng chờ và kiểm tra lại.',
                 'step' => 'already_processing',
             ], 409);
-            return;
         }
 
         // Đọc lại sau khi đã giữ khóa để tránh dùng trạng thái cũ khi hai request đến gần nhau.
@@ -2069,22 +2121,20 @@ class TGS_Viettel_Invoice_Plugin
         $invoice_state = sanitize_key($latest['invoice_state'] ?? '');
 
         if ($invoice_id > 0 && ($invoice_state === 'done' || $send_cqt_status === 1)) {
-            wp_send_json_success([
+            return TGS_Viettel_Invoice_Pos_Service::ok([
                 'message' => 'Hóa đơn đã được gửi CQT trước đó, hệ thống không gửi lại.',
                 'sale_ledger_id' => $sale_ledger_id,
                 'mode' => 'already_done',
                 'already_sent' => true,
                 'transaction_uuid' => $transaction_uuid,
             ]);
-            return;
         }
 
         if ($invoice_id > 0 && $invoice_state === 'pending') {
-            wp_send_json_error([
+            return TGS_Viettel_Invoice_Pos_Service::fail([
                 'message' => 'Hóa đơn đang được xử lý. Vui lòng chờ và kiểm tra lại trước khi gửi lại.',
                 'step' => 'already_processing',
             ], 409);
-            return;
         }
 
         if (empty($latest)) {
@@ -2096,8 +2146,7 @@ class TGS_Viettel_Invoice_Plugin
             );
 
             if ($sale_code === '') {
-                wp_send_json_error(['message' => 'Không tìm thấy phiếu bán để gửi lại hóa đơn.'], 404);
-                return;
+                return TGS_Viettel_Invoice_Pos_Service::fail(['message' => 'Không tìm thấy phiếu bán để gửi lại hóa đơn.'], 404);
             }
 
             $latest = [
@@ -2134,11 +2183,10 @@ class TGS_Viettel_Invoice_Plugin
             );
 
             if (empty($cqt_payload_result['success'])) {
-                wp_send_json_error([
+                return TGS_Viettel_Invoice_Pos_Service::fail([
                     'message' => $cqt_payload_result['message'] ?? 'Không tạo được payload gửi CQT.',
                     'step' => 'build_cqt_payload',
                 ], 400);
-                return;
             }
 
             $cqt_payload = $cqt_payload_result['payload'];
@@ -2166,12 +2214,11 @@ class TGS_Viettel_Invoice_Plugin
                     'updated_at' => current_time('mysql'),
                 ]);
 
-                wp_send_json_error([
+                return TGS_Viettel_Invoice_Pos_Service::fail([
                     'message' => $cqt_result['message'] ?? 'Gửi lại CQT thất bại.',
                     'step' => 'send_cqt_retry',
                     'http_code' => intval($cqt_result['http_code'] ?? 0),
                 ], 400);
-                return;
             }
 
             $this->update_auto_flow_tracking($invoice_id, [
@@ -2186,28 +2233,25 @@ class TGS_Viettel_Invoice_Plugin
                 'updated_at' => current_time('mysql'),
             ]);
 
-            wp_send_json_success([
+            return TGS_Viettel_Invoice_Pos_Service::ok([
                 'message' => 'Đã gửi lại CQT thành công (không tạo lại hóa đơn).',
                 'sale_ledger_id' => $sale_ledger_id,
                 'mode' => 'send_cqt_only',
                 'transaction_uuid' => $transaction_uuid,
             ]);
-            return;
         }
 
         // Case 2: Chưa issue thành công => chạy lại full flow.
         if (!$this->flow_service) {
-            wp_send_json_error(['message' => 'Flow service chưa khởi tạo.'], 500);
-            return;
+            return TGS_Viettel_Invoice_Pos_Service::fail(['message' => 'Flow service chưa khởi tạo.'], 500);
         }
 
         $settings = self::get_settings_for_invoice($invoice_id);
         if (empty($settings['username']) || empty($settings['supplier_tax_code'])) {
-            wp_send_json_error(['message' => 'Chưa cấu hình Viettel Invoice. Vui lòng vào Cấu hình để thiết lập.'], 400);
-            return;
+            return TGS_Viettel_Invoice_Pos_Service::fail(['message' => 'Chưa cấu hình Viettel Invoice. Vui lòng vào Cấu hình để thiết lập.'], 400);
         }
 
-        $customer_override = $this->parse_customer_override_from_post();
+        $customer_override = $this->parse_customer_override_from_post($in);
         if (!empty($customer_override)
             && method_exists('TGS_Viettel_Invoice_Flow_Service', 'save_invoice_buyer_to_sale')) {
             TGS_Viettel_Invoice_Flow_Service::save_invoice_buyer_to_sale($sale_ledger_id, $customer_override);
@@ -2217,19 +2261,18 @@ class TGS_Viettel_Invoice_Plugin
             'sale_ledger_id' => $sale_ledger_id,
             'sale_code' => sanitize_text_field($latest['local_ledger_code'] ?? ''),
             'employee_id' => $created_by,
-            'excluded_item_ids' => $this->parse_excluded_item_ids_from_post(),
+            'excluded_item_ids' => $this->parse_excluded_item_ids_from_post($in),
             'customer_override' => $customer_override,
         ], $settings, false);
 
         if (empty($flow_result['success'])) {
-            wp_send_json_error([
+            return TGS_Viettel_Invoice_Pos_Service::fail([
                 'message' => $flow_result['message'] ?? 'Gửi lại hóa đơn chưa thành công.',
                 'step' => $flow_result['step'] ?? 'full_flow',
             ], 400);
-            return;
         }
 
-        wp_send_json_success([
+        return TGS_Viettel_Invoice_Pos_Service::ok([
             'message' => 'Đã phát hành lại hóa đơn và gửi CQT thành công.',
             'sale_ledger_id' => $sale_ledger_id,
             'mode' => 'full_flow',
@@ -2250,18 +2293,31 @@ class TGS_Viettel_Invoice_Plugin
         if (empty($nonce) || (!wp_verify_nonce($nonce, 'tgs_pos_nonce') && !wp_verify_nonce($nonce, 'tmd_pos_nonce'))) {
             wp_send_json_error(['message' => 'Nonce không hợp lệ.'], 403); return;
         }
+
+        TGS_Viettel_Invoice_Pos_Service::send($this->core_pos_recover_invoice_no($_POST));
+    }
+
+    /**
+     * Lõi của ajax_pos_recover_invoice_no (dùng chung AJAX + TGS_Viettel_Invoice_Pos_Service). $in = trường form dạng đã slash như $_POST.
+     * Trả TGS_Viettel_Invoice_Pos_Service::ok()/fail() — không in, không dừng yêu cầu.
+     *
+     * @internal Gọi qua TGS_Viettel_Invoice_Pos_Service.
+     * @return array{success: bool, data: mixed, status: int|null}
+     */
+    public function core_pos_recover_invoice_no(array $in)
+    {
         if (!$this->current_user_can_use_pos()) {
-            wp_send_json_error(['message' => 'Bạn không có quyền.'], 403); return;
+            return TGS_Viettel_Invoice_Pos_Service::fail(['message' => 'Bạn không có quyền.'], 403);
         }
         if (!defined('TGS_TABLE_LOCAL_VIETTEL_INVOICE')) {
-            wp_send_json_error(['message' => 'Chưa có bảng theo dõi hóa đơn Viettel.'], 500); return;
+            return TGS_Viettel_Invoice_Pos_Service::fail(['message' => 'Chưa có bảng theo dõi hóa đơn Viettel.'], 500);
         }
-        $sale_ledger_id = intval($_POST['sale_ledger_id'] ?? 0);
-        if ($sale_ledger_id <= 0) { wp_send_json_error(['message' => 'Thiếu sale_ledger_id.'], 400); return; }
+        $sale_ledger_id = intval($in['sale_ledger_id'] ?? 0);
+        if ($sale_ledger_id <= 0) { return TGS_Viettel_Invoice_Pos_Service::fail(['message' => 'Thiếu sale_ledger_id.'], 400); }
 
         $lock = $this->acquire_sale_invoice_lock($sale_ledger_id);
         if ($lock === '') {
-            wp_send_json_error(['message' => 'Đơn đang được xử lý, thử lại sau.', 'step' => 'already_processing'], 409); return;
+            return TGS_Viettel_Invoice_Pos_Service::fail(['message' => 'Đơn đang được xử lý, thử lại sau.', 'step' => 'already_processing'], 409);
         }
 
         global $wpdb;
@@ -2270,7 +2326,7 @@ class TGS_Viettel_Invoice_Plugin
         $transaction_uuid = sanitize_text_field($latest['issue_transaction_uuid'] ?? '');
 
         // NHẬP TAY: nếu người dùng đưa sẵn SỐ hóa đơn (đọc từ portal Viettel) thì dùng luôn, khỏi tra.
-        $manual_no = preg_replace('/[^A-Za-z0-9\/._-]/', '', sanitize_text_field((string) wp_unslash($_POST['manual_invoice_no'] ?? '')));
+        $manual_no = preg_replace('/[^A-Za-z0-9\/._-]/', '', sanitize_text_field((string) wp_unslash($in['manual_invoice_no'] ?? '')));
 
         /*
          * "TRA VIETTEL ĐỀN BÙ" (07/10/2026) — đơn HUỶ GỬI THUẾ / chưa gửi, hoá đơn
@@ -2280,11 +2336,10 @@ class TGS_Viettel_Invoice_Plugin
          * $_POST['compensate']=1 bật chế độ này (bắt buộc kiểm số, cho phép đơn
          * chưa từng có bản ghi hoá đơn).
          */
-        $compensate = !empty($_POST['compensate']);
+        $compensate = !empty($in['compensate']);
         if ($compensate) {
             if ($manual_no === '') {
-                wp_send_json_error(['message' => 'Chưa nhập số hóa đơn Viettel.'], 400);
-                return;
+                return TGS_Viettel_Invoice_Pos_Service::fail(['message' => 'Chưa nhập số hóa đơn Viettel.'], 400);
             }
             // Số này đã gắn cho phiếu khác của shop thì không cho gắn lần nữa
             $dup = $wpdb->get_row($wpdb->prepare(
@@ -2293,8 +2348,7 @@ class TGS_Viettel_Invoice_Plugin
                 $manual_no, $sale_ledger_id
             ), ARRAY_A);
             if (!empty($dup)) {
-                wp_send_json_error(['message' => 'Số hóa đơn ' . $manual_no . ' đã gắn cho phiếu ' . ($dup['local_ledger_code'] ?: ('#' . $dup['sale_ledger_id'])) . ' — không gắn trùng.'], 400);
-                return;
+                return TGS_Viettel_Invoice_Pos_Service::fail(['message' => 'Số hóa đơn ' . $manual_no . ' đã gắn cho phiếu ' . ($dup['local_ledger_code'] ?: ('#' . $dup['sale_ledger_id'])) . ' — không gắn trùng.'], 400);
             }
 
             $settings = self::get_settings_for_invoice($invoice_id);
@@ -2305,17 +2359,15 @@ class TGS_Viettel_Invoice_Plugin
                 $template_code = $defaults['default_template_code'] ?? '1/1156';
             }
             if ($supplier_tax_code === '') {
-                wp_send_json_error(['message' => 'Thiếu MST nhà cung cấp trong cấu hình Viettel của shop.'], 400);
-                return;
+                return TGS_Viettel_Invoice_Pos_Service::fail(['message' => 'Thiếu MST nhà cung cấp trong cấu hình Viettel của shop.'], 400);
             }
             $check = $this->fetch_invoice_representation_file($settings, $supplier_tax_code, $manual_no, $template_code, 'PDF');
             if (empty($check['success'])) {
-                wp_send_json_error([
+                return TGS_Viettel_Invoice_Pos_Service::fail([
                     'message' => 'Không tra thấy hóa đơn số ' . $manual_no . ' trên Viettel (MST ' . $supplier_tax_code . ', mẫu ' . $template_code . '): '
                         . ($check['message'] ?? 'không rõ lỗi') . ' — kiểm tra lại số hóa đơn. Chưa đổi gì trên đơn.',
                     'step' => 'compensate_not_found',
                 ], 400);
-                return;
             }
 
             if ($invoice_id <= 0) {
@@ -2328,8 +2380,7 @@ class TGS_Viettel_Invoice_Plugin
                     [], get_current_user_id(), 'pending', 0, 0, ''
                 );
                 if ($invoice_id <= 0) {
-                    wp_send_json_error(['message' => 'Không tạo được bản ghi hóa đơn cho đơn này.'], 500);
-                    return;
+                    return TGS_Viettel_Invoice_Pos_Service::fail(['message' => 'Không tạo được bản ghi hóa đơn cho đơn này.'], 500);
                 }
                 $latest = ['local_viettel_invoice_id' => $invoice_id, 'local_ledger_code' => $sale_code];
             }
@@ -2362,10 +2413,9 @@ class TGS_Viettel_Invoice_Plugin
         }
 
         if ($invoice_id <= 0) {
-            wp_send_json_error([
+            return TGS_Viettel_Invoice_Pos_Service::fail([
                 'message' => 'Đơn chưa từng phát hành hóa đơn — dùng nút "Gửi lại" để phát hành, hoặc "Tra Viettel đền bù" nếu hóa đơn đã lập bù trên Viettel.',
             ], 400);
-            return;
         }
 
         $invoice_no = '';
@@ -2398,12 +2448,11 @@ class TGS_Viettel_Invoice_Plugin
         }
 
         if ($invoice_no === '') {
-            wp_send_json_error([
+            return TGS_Viettel_Invoice_Pos_Service::fail([
                 'message' => 'Chưa tự tra được số. Nếu bạn THẤY hóa đơn ĐÃ có trên Viettel, nhập tay SỐ HÓA ĐƠN (vd C26MLY53566) để lưu.',
                 'step' => 'no_invoice_no',
                 'allow_manual' => true,
             ], 400);
-            return;
         }
 
         // 2) CÓ SỐ ⇒ hóa đơn đã phát hành THẬT trên Viettel (Viettel không cấp số cho hóa đơn chưa lập).
@@ -2451,7 +2500,7 @@ class TGS_Viettel_Invoice_Plugin
             'updated_at'        => current_time('mysql'),
         ]);
 
-        wp_send_json_success([
+        return TGS_Viettel_Invoice_Pos_Service::ok([
             'message'    => 'Đã lấy số hóa đơn ' . $invoice_no . ' về và chốt "Thành công"'
                 . ($cqt_fresh ? ' (đã gửi cơ quan thuế).' : ' (hóa đơn đã có trên Viettel).'),
             'invoice_no' => $invoice_no,
@@ -2473,31 +2522,39 @@ class TGS_Viettel_Invoice_Plugin
             wp_send_json_error(['message' => 'Nonce không hợp lệ.'], 403);
             return;
         }
+
+        TGS_Viettel_Invoice_Pos_Service::send($this->core_pos_import_replacement($_POST));
+    }
+
+    /**
+     * Lõi của ajax_pos_import_replacement (dùng chung AJAX + TGS_Viettel_Invoice_Pos_Service). $in = trường form dạng đã slash như $_POST.
+     * Trả TGS_Viettel_Invoice_Pos_Service::ok()/fail() — không in, không dừng yêu cầu.
+     *
+     * @internal Gọi qua TGS_Viettel_Invoice_Pos_Service.
+     * @return array{success: bool, data: mixed, status: int|null}
+     */
+    public function core_pos_import_replacement(array $in)
+    {
         if (!$this->current_user_can_use_pos()) {
-            wp_send_json_error(['message' => 'Bạn không có quyền thao tác.'], 403);
-            return;
+            return TGS_Viettel_Invoice_Pos_Service::fail(['message' => 'Bạn không có quyền thao tác.'], 403);
         }
-        if ((string) ($_POST['password'] ?? '') !== 'Thuy!@#') {
-            wp_send_json_error(['message' => 'Mật khẩu không đúng.'], 403);
-            return;
+        if ((string) ($in['password'] ?? '') !== 'Thuy!@#') {
+            return TGS_Viettel_Invoice_Pos_Service::fail(['message' => 'Mật khẩu không đúng.'], 403);
         }
-        $sale_ledger_id = intval($_POST['sale_ledger_id'] ?? 0);
-        $new_no = sanitize_text_field($_POST['replacement_invoice_no'] ?? '');
+        $sale_ledger_id = intval($in['sale_ledger_id'] ?? 0);
+        $new_no = sanitize_text_field($in['replacement_invoice_no'] ?? '');
         if ($sale_ledger_id <= 0 || $new_no === '') {
-            wp_send_json_error(['message' => 'Thiếu phiếu hoặc số hoá đơn thay thế.'], 400);
-            return;
+            return TGS_Viettel_Invoice_Pos_Service::fail(['message' => 'Thiếu phiếu hoặc số hoá đơn thay thế.'], 400);
         }
         if (!class_exists('TGS_Viettel_Invoice_Replacement')) {
-            wp_send_json_error(['message' => 'Chưa nạp module hoá đơn thay thế.'], 500);
-            return;
+            return TGS_Viettel_Invoice_Pos_Service::fail(['message' => 'Chưa nạp module hoá đơn thay thế.'], 500);
         }
         $res = TGS_Viettel_Invoice_Replacement::instance($this)
             ->record_manual_replacement($sale_ledger_id, $new_no, get_current_user_id());
         if (empty($res['success'])) {
-            wp_send_json_error(['message' => $res['message'] ?? 'Không gắn được hoá đơn thay thế.'], 400);
-            return;
+            return TGS_Viettel_Invoice_Pos_Service::fail(['message' => $res['message'] ?? 'Không gắn được hoá đơn thay thế.'], 400);
         }
-        wp_send_json_success($res);
+        return TGS_Viettel_Invoice_Pos_Service::ok($res);
     }
 
     /**
@@ -2515,19 +2572,29 @@ class TGS_Viettel_Invoice_Plugin
             wp_send_json_error(['message' => 'Nonce không hợp lệ.'], 403);
             return;
         }
+
+        TGS_Viettel_Invoice_Pos_Service::send($this->core_pos_update_invoice_date($_POST));
+    }
+
+    /**
+     * Lõi của ajax_pos_update_invoice_date (dùng chung AJAX + TGS_Viettel_Invoice_Pos_Service). $in = trường form dạng đã slash như $_POST.
+     * Trả TGS_Viettel_Invoice_Pos_Service::ok()/fail() — không in, không dừng yêu cầu.
+     *
+     * @internal Gọi qua TGS_Viettel_Invoice_Pos_Service.
+     * @return array{success: bool, data: mixed, status: int|null}
+     */
+    public function core_pos_update_invoice_date(array $in)
+    {
         if (!$this->current_user_can_use_pos()) {
-            wp_send_json_error(['message' => 'Bạn không có quyền thao tác.'], 403);
-            return;
+            return TGS_Viettel_Invoice_Pos_Service::fail(['message' => 'Bạn không có quyền thao tác.'], 403);
         }
-        if ((string) ($_POST['password'] ?? '') !== 'Thuy!@#') {
-            wp_send_json_error(['message' => 'Mật khẩu không đúng.'], 403);
-            return;
+        if ((string) ($in['password'] ?? '') !== 'Thuy!@#') {
+            return TGS_Viettel_Invoice_Pos_Service::fail(['message' => 'Mật khẩu không đúng.'], 403);
         }
-        $sale_ledger_id = intval($_POST['sale_ledger_id'] ?? 0);
-        $raw = trim((string) ($_POST['invoice_date'] ?? ''));
+        $sale_ledger_id = intval($in['sale_ledger_id'] ?? 0);
+        $raw = trim((string) ($in['invoice_date'] ?? ''));
         if ($sale_ledger_id <= 0 || $raw === '') {
-            wp_send_json_error(['message' => 'Thiếu phiếu hoặc ngày hóa đơn.'], 400);
-            return;
+            return TGS_Viettel_Invoice_Pos_Service::fail(['message' => 'Thiếu phiếu hoặc ngày hóa đơn.'], 400);
         }
         // Chấp nhận Y-m-d hoặc d/m/Y → chuẩn hóa Y-m-d.
         $ymd = '';
@@ -2537,15 +2604,13 @@ class TGS_Viettel_Invoice_Plugin
             $ymd = sprintf('%04d-%02d-%02d', $m[3], $m[2], $m[1]);
         }
         if ($ymd === '' || !strtotime($ymd)) {
-            wp_send_json_error(['message' => 'Ngày hóa đơn không hợp lệ (dùng dd/mm/yyyy).'], 400);
-            return;
+            return TGS_Viettel_Invoice_Pos_Service::fail(['message' => 'Ngày hóa đơn không hợp lệ (dùng dd/mm/yyyy).'], 400);
         }
 
         global $wpdb;
         $vi = $wpdb->prefix . 'local_viettel_invoice';
         if ($wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $vi)) !== $vi) {
-            wp_send_json_error(['message' => 'Thiếu bảng hóa đơn Viettel.'], 500);
-            return;
+            return TGS_Viettel_Invoice_Pos_Service::fail(['message' => 'Thiếu bảng hóa đơn Viettel.'], 500);
         }
         // Bản ghi hóa đơn mới nhất của phiếu.
         $row = $wpdb->get_row($wpdb->prepare(
@@ -2554,8 +2619,7 @@ class TGS_Viettel_Invoice_Plugin
             $sale_ledger_id
         ), ARRAY_A);
         if (!$row) {
-            wp_send_json_error(['message' => 'Chưa có hóa đơn cho phiếu này.'], 404);
-            return;
+            return TGS_Viettel_Invoice_Pos_Service::fail(['message' => 'Chưa có hóa đơn cho phiếu này.'], 404);
         }
         // Giữ nguyên phần GIỜ cũ, chỉ đổi phần NGÀY.
         $old = (string) ($row['issue_sent_at'] ?? '');
@@ -2564,10 +2628,9 @@ class TGS_Viettel_Invoice_Plugin
 
         $ok = $wpdb->update($vi, ['issue_sent_at' => $new_dt], ['local_viettel_invoice_id' => (int) $row['local_viettel_invoice_id']]);
         if ($ok === false) {
-            wp_send_json_error(['message' => 'Không cập nhật được ngày hóa đơn.'], 500);
-            return;
+            return TGS_Viettel_Invoice_Pos_Service::fail(['message' => 'Không cập nhật được ngày hóa đơn.'], 500);
         }
-        wp_send_json_success([
+        return TGS_Viettel_Invoice_Pos_Service::ok([
             'message'      => 'Đã cập nhật ngày hóa đơn = ' . date('d/m/Y', strtotime($ymd)) . '.',
             'invoice_date' => $new_dt,
         ]);
@@ -2588,20 +2651,29 @@ class TGS_Viettel_Invoice_Plugin
             return;
         }
 
+        TGS_Viettel_Invoice_Pos_Service::send($this->core_pos_send_invoice_email($_POST));
+    }
+
+    /**
+     * Lõi của ajax_pos_send_invoice_email (dùng chung AJAX + TGS_Viettel_Invoice_Pos_Service). $in = trường form dạng đã slash như $_POST.
+     * Trả TGS_Viettel_Invoice_Pos_Service::ok()/fail() — không in, không dừng yêu cầu.
+     *
+     * @internal Gọi qua TGS_Viettel_Invoice_Pos_Service.
+     * @return array{success: bool, data: mixed, status: int|null}
+     */
+    public function core_pos_send_invoice_email(array $in)
+    {
         if (!$this->current_user_can_use_pos()) {
-            wp_send_json_error(['message' => 'Bạn không có quyền gửi email hóa đơn.'], 403);
-            return;
+            return TGS_Viettel_Invoice_Pos_Service::fail(['message' => 'Bạn không có quyền gửi email hóa đơn.'], 403);
         }
 
         if (!defined('TGS_TABLE_LOCAL_VIETTEL_INVOICE')) {
-            wp_send_json_error(['message' => 'Chưa tìm thấy bảng theo dõi hóa đơn Viettel.'], 500);
-            return;
+            return TGS_Viettel_Invoice_Pos_Service::fail(['message' => 'Chưa tìm thấy bảng theo dõi hóa đơn Viettel.'], 500);
         }
 
-        $sale_ledger_id = intval($_POST['sale_ledger_id'] ?? 0);
+        $sale_ledger_id = intval($in['sale_ledger_id'] ?? 0);
         if ($sale_ledger_id <= 0) {
-            wp_send_json_error(['message' => 'Thiếu sale_ledger_id.'], 400);
-            return;
+            return TGS_Viettel_Invoice_Pos_Service::fail(['message' => 'Thiếu sale_ledger_id.'], 400);
         }
 
         /*
@@ -2615,12 +2687,11 @@ class TGS_Viettel_Invoice_Plugin
          *
          * Thà báo lỗi để nhân viên gõ lại còn hơn gửi nhầm người.
          */
-        $to_email = sanitize_email($_POST['to_email'] ?? '');
+        $to_email = sanitize_email($in['to_email'] ?? '');
         if ($to_email === '') {
-            wp_send_json_error([
+            return TGS_Viettel_Invoice_Pos_Service::fail([
                 'message' => 'Chưa có email người nhận hợp lệ — kiểm tra lại ô Email của khách.',
             ], 400);
-            return;
         }
 
         global $wpdb;
@@ -2638,13 +2709,11 @@ class TGS_Viettel_Invoice_Plugin
         );
 
         if (empty($latest)) {
-            wp_send_json_error(['message' => 'Không tìm thấy hóa đơn Viettel của đơn này.'], 404);
-            return;
+            return TGS_Viettel_Invoice_Pos_Service::fail(['message' => 'Không tìm thấy hóa đơn Viettel của đơn này.'], 404);
         }
 
         if (sanitize_text_field($latest['invoice_state'] ?? '') !== 'done') {
-            wp_send_json_error(['message' => 'Chỉ gửi email cho hóa đơn đã gửi CQT thành công.'], 400);
-            return;
+            return TGS_Viettel_Invoice_Pos_Service::fail(['message' => 'Chỉ gửi email cho hóa đơn đã gửi CQT thành công.'], 400);
         }
 
         // Ưu tiên SỐ đã lưu (viettel_invoice_no), thiếu mới suy từ payload.
@@ -2653,8 +2722,7 @@ class TGS_Viettel_Invoice_Plugin
             $invoice_no = $this->extract_invoice_no_from_issue_payload($latest['issue_response_payload'] ?? '');
         }
         if ($invoice_no === '') {
-            wp_send_json_error(['message' => 'Không lấy được invoiceNo để tải file PDF.'], 400);
-            return;
+            return TGS_Viettel_Invoice_Pos_Service::fail(['message' => 'Không lấy được invoiceNo để tải file PDF.'], 400);
         }
 
         $template_code = sanitize_text_field($latest['template_code'] ?? '');
@@ -2666,8 +2734,7 @@ class TGS_Viettel_Invoice_Plugin
         $settings = self::get_settings_for_invoice(intval($latest['local_viettel_invoice_id'] ?? 0));
         $supplier_tax_code = sanitize_text_field($settings['supplier_tax_code'] ?? '');
         if ($supplier_tax_code === '') {
-            wp_send_json_error(['message' => 'Thiếu MST nhà cung cấp trong cấu hình Viettel.'], 400);
-            return;
+            return TGS_Viettel_Invoice_Pos_Service::fail(['message' => 'Thiếu MST nhà cung cấp trong cấu hình Viettel.'], 400);
         }
 
         /*
@@ -2681,10 +2748,9 @@ class TGS_Viettel_Invoice_Plugin
             ? TGS_Viettel_Mail_Config::get()
             : ['enabled' => true, 'mode' => 'smtp']; // thiếu class -> giữ hành vi cũ
         if (empty($tgs_mail_cfg['enabled'])) {
-            wp_send_json_error([
+            return TGS_Viettel_Invoice_Pos_Service::fail([
                 'message' => 'Website này CHƯA bật gửi email hóa đơn. Vào Quản trị → "Cài đặt gửi mail" để bật cho website này.',
             ], 400);
-            return;
         }
 
         if ($tgs_mail_cfg['mode'] === 'viettel') {
@@ -2697,8 +2763,7 @@ class TGS_Viettel_Invoice_Plugin
             }
             $mail_tx_uuid = sanitize_text_field($mail_tx_uuid);
             if ($mail_tx_uuid === '') {
-                wp_send_json_error(['message' => 'Hóa đơn này không có transactionUuid (phát hành trước bản cập nhật) nên không gửi mail qua API Viettel được. Hãy dùng kênh SMTP cho hóa đơn cũ, hoặc phát hành hóa đơn mới.'], 400);
-                return;
+                return TGS_Viettel_Invoice_Pos_Service::fail(['message' => 'Hóa đơn này không có transactionUuid (phát hành trước bản cập nhật) nên không gửi mail qua API Viettel được. Hãy dùng kênh SMTP cho hóa đơn cũ, hoặc phát hành hóa đơn mới.'], 400);
             }
             $mail_res = $this->send_html_mail_via_viettel($settings, $supplier_tax_code, $mail_tx_uuid);
             $this->insert_log_record([
@@ -2718,17 +2783,15 @@ class TGS_Viettel_Invoice_Plugin
                 'created_by' => $created_by,
             ]);
             if (empty($mail_res['success'])) {
-                wp_send_json_error([
+                return TGS_Viettel_Invoice_Pos_Service::fail([
                     'message' => 'Gửi email qua API Viettel thất bại: ' . ($mail_res['message'] ?? 'lỗi không rõ'),
                     'http_code' => intval($mail_res['http_code'] ?? 0),
                 ], 400);
-                return;
             }
-            wp_send_json_success([
+            return TGS_Viettel_Invoice_Pos_Service::ok([
                 'message' => 'Đã yêu cầu Viettel gửi email hóa đơn tới địa chỉ email trên hóa đơn.',
                 'channel' => 'viettel',
             ]);
-            return;
         }
 
         $pdf_result = $this->fetch_invoice_representation_file(
@@ -2762,31 +2825,27 @@ class TGS_Viettel_Invoice_Plugin
                 'created_by' => $created_by,
             ]);
 
-            wp_send_json_error([
+            return TGS_Viettel_Invoice_Pos_Service::fail([
                 'message' => $pdf_result['message'] ?? 'Không lấy được file PDF hóa đơn.',
                 'http_code' => intval($pdf_result['http_code'] ?? 0),
             ], 400);
-            return;
         }
 
         $file_bytes = (string) ($pdf_result['file_bytes_base64'] ?? '');
         if ($file_bytes === '') {
-            wp_send_json_error(['message' => 'API trả về thiếu fileToBytes.'], 400);
-            return;
+            return TGS_Viettel_Invoice_Pos_Service::fail(['message' => 'API trả về thiếu fileToBytes.'], 400);
         }
 
         $binary = base64_decode($file_bytes, true);
         if ($binary === false || $binary === '') {
-            wp_send_json_error(['message' => 'Không giải mã được file PDF từ API Viettel.'], 400);
-            return;
+            return TGS_Viettel_Invoice_Pos_Service::fail(['message' => 'Không giải mã được file PDF từ API Viettel.'], 400);
         }
 
         $safe_invoice_no = preg_replace('/[^A-Za-z0-9\-_]/', '_', $invoice_no);
         $pdf_file_name = $safe_invoice_no . '.pdf';
         $temp_file = $this->create_invoice_email_attachment_temp_file($pdf_file_name, $binary);
         if (empty($temp_file)) {
-            wp_send_json_error(['message' => 'Không tạo được file đính kèm PDF tạm.'], 500);
-            return;
+            return TGS_Viettel_Invoice_Pos_Service::fail(['message' => 'Không tạo được file đính kèm PDF tạm.'], 500);
         }
 
         $attachments = [$temp_file];
@@ -2883,8 +2942,7 @@ class TGS_Viettel_Invoice_Plugin
                 'created_by' => $created_by,
             ]);
 
-            wp_send_json_error(['message' => $mail_error_message], 500);
-            return;
+            return TGS_Viettel_Invoice_Pos_Service::fail(['message' => $mail_error_message], 500);
         }
 
         $this->insert_log_record([
@@ -2916,7 +2974,7 @@ class TGS_Viettel_Invoice_Plugin
             'created_by' => $created_by,
         ]);
 
-        wp_send_json_success([
+        return TGS_Viettel_Invoice_Pos_Service::ok([
             'message' => 'Đã gửi email hóa đơn thành công tới ' . $to_email,
             'to_email' => $to_email,
             'invoice_no' => $invoice_no,
@@ -2946,33 +3004,40 @@ class TGS_Viettel_Invoice_Plugin
             wp_send_json_error(['message' => 'Nonce không hợp lệ.'], 403);
             return;
         }
+
+        TGS_Viettel_Invoice_Pos_Service::send($this->core_pos_send_invoice_email_portal($_POST));
+    }
+
+    /**
+     * Lõi của ajax_pos_send_invoice_email_portal (dùng chung AJAX + TGS_Viettel_Invoice_Pos_Service). $in = trường form dạng đã slash như $_POST.
+     * Trả TGS_Viettel_Invoice_Pos_Service::ok()/fail() — không in, không dừng yêu cầu.
+     *
+     * @internal Gọi qua TGS_Viettel_Invoice_Pos_Service.
+     * @return array{success: bool, data: mixed, status: int|null}
+     */
+    public function core_pos_send_invoice_email_portal(array $in)
+    {
         if (!$this->current_user_can_use_pos()) {
-            wp_send_json_error(['message' => 'Bạn không có quyền gửi email hóa đơn.'], 403);
-            return;
+            return TGS_Viettel_Invoice_Pos_Service::fail(['message' => 'Bạn không có quyền gửi email hóa đơn.'], 403);
         }
         if (!class_exists('TGS_Viettel_Portal_Mailer')) {
-            wp_send_json_error(['message' => 'Thiếu module portal Viettel (deploy lại plugin).'], 500);
-            return;
+            return TGS_Viettel_Invoice_Pos_Service::fail(['message' => 'Thiếu module portal Viettel (deploy lại plugin).'], 500);
         }
         if (!TGS_Viettel_Portal_Mailer::is_enabled()) {
-            wp_send_json_error(['message' => 'Cụm của shop này chưa bật "Gửi email đa địa chỉ (portal Viettel)". Vào Cấu hình cụm Viettel → mục "Gửi email đa địa chỉ" để bật + nhập tài khoản portal.'], 400);
-            return;
+            return TGS_Viettel_Invoice_Pos_Service::fail(['message' => 'Cụm của shop này chưa bật "Gửi email đa địa chỉ (portal Viettel)". Vào Cấu hình cụm Viettel → mục "Gửi email đa địa chỉ" để bật + nhập tài khoản portal.'], 400);
         }
         if (!defined('TGS_TABLE_LOCAL_VIETTEL_INVOICE')) {
-            wp_send_json_error(['message' => 'Chưa tìm thấy bảng theo dõi hóa đơn Viettel.'], 500);
-            return;
+            return TGS_Viettel_Invoice_Pos_Service::fail(['message' => 'Chưa tìm thấy bảng theo dõi hóa đơn Viettel.'], 500);
         }
 
-        $sale_ledger_id = intval($_POST['sale_ledger_id'] ?? 0);
+        $sale_ledger_id = intval($in['sale_ledger_id'] ?? 0);
         if ($sale_ledger_id <= 0) {
-            wp_send_json_error(['message' => 'Thiếu sale_ledger_id.'], 400);
-            return;
+            return TGS_Viettel_Invoice_Pos_Service::fail(['message' => 'Thiếu sale_ledger_id.'], 400);
         }
 
-        $emails = TGS_Viettel_Portal_Mailer::split_emails(wp_unslash($_POST['to_emails'] ?? ''));
+        $emails = TGS_Viettel_Portal_Mailer::split_emails(wp_unslash($in['to_emails'] ?? ''));
         if (empty($emails)) {
-            wp_send_json_error(['message' => 'Chưa có email người nhận hợp lệ — nhập ít nhất 1 email.'], 400);
-            return;
+            return TGS_Viettel_Invoice_Pos_Service::fail(['message' => 'Chưa có email người nhận hợp lệ — nhập ít nhất 1 email.'], 400);
         }
 
         global $wpdb;
@@ -2989,12 +3054,10 @@ class TGS_Viettel_Invoice_Plugin
             ARRAY_A
         );
         if (empty($latest)) {
-            wp_send_json_error(['message' => 'Không tìm thấy hóa đơn Viettel của đơn này.'], 404);
-            return;
+            return TGS_Viettel_Invoice_Pos_Service::fail(['message' => 'Không tìm thấy hóa đơn Viettel của đơn này.'], 404);
         }
         if (sanitize_text_field($latest['invoice_state'] ?? '') !== 'done') {
-            wp_send_json_error(['message' => 'Chỉ gửi email cho hóa đơn đã gửi CQT thành công.'], 400);
-            return;
+            return TGS_Viettel_Invoice_Pos_Service::fail(['message' => 'Chỉ gửi email cho hóa đơn đã gửi CQT thành công.'], 400);
         }
 
         $invoice_no = sanitize_text_field((string) ($latest['viettel_invoice_no'] ?? ''));
@@ -3002,8 +3065,7 @@ class TGS_Viettel_Invoice_Plugin
             $invoice_no = $this->extract_invoice_no_from_issue_payload($latest['issue_response_payload'] ?? '');
         }
         if ($invoice_no === '') {
-            wp_send_json_error(['message' => 'Không lấy được invoiceNo để tra trên portal.'], 400);
-            return;
+            return TGS_Viettel_Invoice_Pos_Service::fail(['message' => 'Không lấy được invoiceNo để tra trên portal.'], 400);
         }
 
         $issue_date = sanitize_text_field((string) ($latest['created_at'] ?? ''));
@@ -3028,14 +3090,13 @@ class TGS_Viettel_Invoice_Plugin
         ]);
 
         if (empty($res['ok'])) {
-            wp_send_json_error([
+            return TGS_Viettel_Invoice_Pos_Service::fail([
                 'message' => $res['message'] ?? 'Gửi email qua portal Viettel thất bại.',
                 'http_code' => intval($res['http_code'] ?? 0),
             ], 400);
-            return;
         }
 
-        wp_send_json_success([
+        return TGS_Viettel_Invoice_Pos_Service::ok([
             'message' => 'Đã gửi email hóa đơn (portal Viettel) tới ' . implode('; ', $emails),
             'to_email' => implode('; ', $emails),
             'invoice_no' => $invoice_no,
@@ -3120,20 +3181,29 @@ class TGS_Viettel_Invoice_Plugin
             return;
         }
 
+        TGS_Viettel_Invoice_Pos_Service::send($this->core_pos_preview_invoice_pdf($_POST));
+    }
+
+    /**
+     * Lõi của ajax_pos_preview_invoice_pdf (dùng chung AJAX + TGS_Viettel_Invoice_Pos_Service). $in = trường form dạng đã slash như $_POST.
+     * Trả TGS_Viettel_Invoice_Pos_Service::ok()/fail() — không in, không dừng yêu cầu.
+     *
+     * @internal Gọi qua TGS_Viettel_Invoice_Pos_Service.
+     * @return array{success: bool, data: mixed, status: int|null}
+     */
+    public function core_pos_preview_invoice_pdf(array $in)
+    {
         if (!$this->current_user_can_use_pos()) {
-            wp_send_json_error(['message' => 'Bạn không có quyền xem PDF hóa đơn.'], 403);
-            return;
+            return TGS_Viettel_Invoice_Pos_Service::fail(['message' => 'Bạn không có quyền xem PDF hóa đơn.'], 403);
         }
 
         if (!defined('TGS_TABLE_LOCAL_VIETTEL_INVOICE')) {
-            wp_send_json_error(['message' => 'Chưa tìm thấy bảng theo dõi hóa đơn Viettel.'], 500);
-            return;
+            return TGS_Viettel_Invoice_Pos_Service::fail(['message' => 'Chưa tìm thấy bảng theo dõi hóa đơn Viettel.'], 500);
         }
 
-        $sale_ledger_id = intval($_POST['sale_ledger_id'] ?? 0);
+        $sale_ledger_id = intval($in['sale_ledger_id'] ?? 0);
         if ($sale_ledger_id <= 0) {
-            wp_send_json_error(['message' => 'Thiếu sale_ledger_id.'], 400);
-            return;
+            return TGS_Viettel_Invoice_Pos_Service::fail(['message' => 'Thiếu sale_ledger_id.'], 400);
         }
 
         global $wpdb;
@@ -3151,13 +3221,11 @@ class TGS_Viettel_Invoice_Plugin
         );
 
         if (empty($latest)) {
-            wp_send_json_error(['message' => 'Không tìm thấy hóa đơn Viettel của đơn này.'], 404);
-            return;
+            return TGS_Viettel_Invoice_Pos_Service::fail(['message' => 'Không tìm thấy hóa đơn Viettel của đơn này.'], 404);
         }
 
         if (sanitize_text_field($latest['invoice_state'] ?? '') !== 'done') {
-            wp_send_json_error(['message' => 'Chỉ xem PDF cho hóa đơn đã gửi CQT thành công.'], 400);
-            return;
+            return TGS_Viettel_Invoice_Pos_Service::fail(['message' => 'Chỉ xem PDF cho hóa đơn đã gửi CQT thành công.'], 400);
         }
 
         // Ưu tiên SỐ đã lưu (viettel_invoice_no — có thể do tra cứu/nhập tay khi issue trả rỗng), thiếu mới suy từ payload.
@@ -3166,8 +3234,7 @@ class TGS_Viettel_Invoice_Plugin
             $invoice_no = $this->extract_invoice_no_from_issue_payload($latest['issue_response_payload'] ?? '');
         }
         if ($invoice_no === '') {
-            wp_send_json_error(['message' => 'Không lấy được invoiceNo để tải file PDF.'], 400);
-            return;
+            return TGS_Viettel_Invoice_Pos_Service::fail(['message' => 'Không lấy được invoiceNo để tải file PDF.'], 400);
         }
 
         $template_code = sanitize_text_field($latest['template_code'] ?? '');
@@ -3179,8 +3246,7 @@ class TGS_Viettel_Invoice_Plugin
         $settings = self::get_settings_for_invoice(intval($latest['local_viettel_invoice_id'] ?? 0));
         $supplier_tax_code = sanitize_text_field($settings['supplier_tax_code'] ?? '');
         if ($supplier_tax_code === '') {
-            wp_send_json_error(['message' => 'Thiếu MST nhà cung cấp trong cấu hình Viettel.'], 400);
-            return;
+            return TGS_Viettel_Invoice_Pos_Service::fail(['message' => 'Thiếu MST nhà cung cấp trong cấu hình Viettel.'], 400);
         }
 
         $pdf_result = $this->fetch_invoice_representation_file(
@@ -3214,17 +3280,15 @@ class TGS_Viettel_Invoice_Plugin
                 'created_by' => $created_by,
             ]);
 
-            wp_send_json_error([
+            return TGS_Viettel_Invoice_Pos_Service::fail([
                 'message' => $pdf_result['message'] ?? 'Không lấy được file PDF hóa đơn.',
                 'http_code' => intval($pdf_result['http_code'] ?? 0),
             ], 400);
-            return;
         }
 
         $file_bytes = (string) ($pdf_result['file_bytes_base64'] ?? '');
         if ($file_bytes === '') {
-            wp_send_json_error(['message' => 'API trả về thiếu fileToBytes.'], 400);
-            return;
+            return TGS_Viettel_Invoice_Pos_Service::fail(['message' => 'API trả về thiếu fileToBytes.'], 400);
         }
 
         $safe_invoice_no = preg_replace('/[^A-Za-z0-9\-_]/', '_', $invoice_no);
@@ -3249,7 +3313,7 @@ class TGS_Viettel_Invoice_Plugin
             'created_by' => $created_by,
         ]);
 
-        wp_send_json_success([
+        return TGS_Viettel_Invoice_Pos_Service::ok([
             'message' => 'Đã lấy file PDF hóa đơn thành công.',
             'sale_ledger_id' => $sale_ledger_id,
             'invoice_no' => $invoice_no,
@@ -3273,14 +3337,25 @@ class TGS_Viettel_Invoice_Plugin
             wp_send_json_error(['message' => 'Nonce không hợp lệ.'], 403);
             return;
         }
+
+        TGS_Viettel_Invoice_Pos_Service::send($this->core_pos_preview_adjustment_pdf($_POST));
+    }
+
+    /**
+     * Lõi của ajax_pos_preview_adjustment_pdf (dùng chung AJAX + TGS_Viettel_Invoice_Pos_Service). $in = trường form dạng đã slash như $_POST.
+     * Trả TGS_Viettel_Invoice_Pos_Service::ok()/fail() — không in, không dừng yêu cầu.
+     *
+     * @internal Gọi qua TGS_Viettel_Invoice_Pos_Service.
+     * @return array{success: bool, data: mixed, status: int|null}
+     */
+    public function core_pos_preview_adjustment_pdf(array $in)
+    {
         if (!$this->current_user_can_use_pos()) {
-            wp_send_json_error(['message' => 'Bạn không có quyền xem PDF.'], 403);
-            return;
+            return TGS_Viettel_Invoice_Pos_Service::fail(['message' => 'Bạn không có quyền xem PDF.'], 403);
         }
-        $return_ledger_id = intval($_POST['return_ledger_id'] ?? 0);
+        $return_ledger_id = intval($in['return_ledger_id'] ?? 0);
         if ($return_ledger_id <= 0) {
-            wp_send_json_error(['message' => 'Thiếu return_ledger_id.'], 400);
-            return;
+            return TGS_Viettel_Invoice_Pos_Service::fail(['message' => 'Thiếu return_ledger_id.'], 400);
         }
 
         global $wpdb;
@@ -3288,8 +3363,7 @@ class TGS_Viettel_Invoice_Plugin
             ? (string) (TGS_Viettel_Invoice_Clusters::instance()->tables()['return_adjustments'] ?? '')
             : $wpdb->base_prefix . 'tgs_viettel_invoice_return_adjustments';
         if ($tbl === '') {
-            wp_send_json_error(['message' => 'Thiếu bảng điều chỉnh giảm.'], 500);
-            return;
+            return TGS_Viettel_Invoice_Pos_Service::fail(['message' => 'Thiếu bảng điều chỉnh giảm.'], 500);
         }
         $row = $wpdb->get_row($wpdb->prepare(
             "SELECT adjustment_invoice_no, request_payload, status, original_invoice_record_id
@@ -3298,13 +3372,11 @@ class TGS_Viettel_Invoice_Plugin
             $return_ledger_id
         ), ARRAY_A);
         if (empty($row)) {
-            wp_send_json_error(['message' => 'Chưa có hóa đơn điều chỉnh cho phiếu hoàn này.'], 404);
-            return;
+            return TGS_Viettel_Invoice_Pos_Service::fail(['message' => 'Chưa có hóa đơn điều chỉnh cho phiếu hoàn này.'], 404);
         }
         $invoice_no = trim((string) ($row['adjustment_invoice_no'] ?? ''));
         if ($invoice_no === '') {
-            wp_send_json_error(['message' => 'Hóa đơn điều chỉnh chưa có số (chưa phát hành xong?).'], 400);
-            return;
+            return TGS_Viettel_Invoice_Pos_Service::fail(['message' => 'Hóa đơn điều chỉnh chưa có số (chưa phát hành xong?).'], 400);
         }
 
         $pay = json_decode((string) ($row['request_payload'] ?? ''), true);
@@ -3316,25 +3388,22 @@ class TGS_Viettel_Invoice_Plugin
         $settings = self::get_settings_for_invoice(intval($row['original_invoice_record_id'] ?? 0));
         $supplier_tax_code = sanitize_text_field($settings['supplier_tax_code'] ?? '');
         if ($supplier_tax_code === '') {
-            wp_send_json_error(['message' => 'Thiếu MST nhà cung cấp trong cấu hình Viettel.'], 400);
-            return;
+            return TGS_Viettel_Invoice_Pos_Service::fail(['message' => 'Thiếu MST nhà cung cấp trong cấu hình Viettel.'], 400);
         }
 
         $pdf = $this->fetch_invoice_representation_file($settings, $supplier_tax_code, $invoice_no, $template_code, 'PDF');
         if (empty($pdf['success'])) {
-            wp_send_json_error([
+            return TGS_Viettel_Invoice_Pos_Service::fail([
                 'message'   => $pdf['message'] ?? 'Không lấy được PDF hóa đơn điều chỉnh.',
                 'http_code' => intval($pdf['http_code'] ?? 0),
             ], 400);
-            return;
         }
         $file_bytes = (string) ($pdf['file_bytes_base64'] ?? '');
         if ($file_bytes === '') {
-            wp_send_json_error(['message' => 'API trả về thiếu fileToBytes.'], 400);
-            return;
+            return TGS_Viettel_Invoice_Pos_Service::fail(['message' => 'API trả về thiếu fileToBytes.'], 400);
         }
         $safe = preg_replace('/[^A-Za-z0-9\-_]/', '_', $invoice_no);
-        wp_send_json_success([
+        return TGS_Viettel_Invoice_Pos_Service::ok([
             'message'           => 'Đã lấy PDF hóa đơn điều chỉnh.',
             'invoice_no'        => $invoice_no,
             'file_name'         => $supplier_tax_code . '-DC-' . $safe . '.pdf',
@@ -3372,7 +3441,7 @@ class TGS_Viettel_Invoice_Plugin
             $headers['Authorization'] = 'Basic ' . base64_encode(($settings['username'] ?? '') . ':' . ($settings['password'] ?? ''));
         }
 
-        $body = wp_json_encode([
+        $body = TGS_Viettel_Invoice_Json::encode([
             'supplierTaxCode'    => (string) $supplier_tax_code,
             'lstTransactionUuid' => (string) $transaction_uuid,
         ], JSON_UNESCAPED_UNICODE);
@@ -3452,7 +3521,7 @@ class TGS_Viettel_Invoice_Plugin
 
         $response = wp_remote_post($url, [
             'headers' => $headers,
-            'body' => wp_json_encode($payload, JSON_UNESCAPED_UNICODE),
+            'body' => TGS_Viettel_Invoice_Json::encode($payload, JSON_UNESCAPED_UNICODE),
             'timeout' => 60,
             // Bắt buộc 1.1 — xem giải thích dài ở submit_invoice_payload().
             // Để mặc định (1.0) là dính cURL error 56 trên máy có OpenSSL 3.
@@ -3674,7 +3743,7 @@ class TGS_Viettel_Invoice_Plugin
             $http_args['headers'] = $headers;
             $response = wp_remote_post($url, $http_args + ['body' => $request_body]);
         } else {
-            $request_body = wp_json_encode($payload, JSON_UNESCAPED_UNICODE);
+            $request_body = TGS_Viettel_Invoice_Json::encode($payload, JSON_UNESCAPED_UNICODE);
             $response = wp_remote_post($url, $http_args + ['body' => $request_body]);
         }
 
@@ -4324,33 +4393,41 @@ class TGS_Viettel_Invoice_Plugin
                 return;
             }
 
+            TGS_Viettel_Invoice_Pos_Service::send($this->core_send_from_sale($_POST));
+        }
+
+        /**
+         * Lõi của ajax_send_from_sale (dùng chung AJAX + TGS_Viettel_Invoice_Pos_Service). $in = trường form dạng đã slash như $_POST.
+         * Trả TGS_Viettel_Invoice_Pos_Service::ok()/fail() — không in, không dừng yêu cầu.
+         *
+         * @internal Gọi qua TGS_Viettel_Invoice_Pos_Service.
+         * @return array{success: bool, data: mixed, status: int|null}
+         */
+        public function core_send_from_sale(array $in)
+        {
             if (!$this->current_user_can_use_pos()) {
-                wp_send_json_error(['message' => 'Bạn không có quyền thực hiện thao tác này.'], 403);
-                return;
+                return TGS_Viettel_Invoice_Pos_Service::fail(['message' => 'Bạn không có quyền thực hiện thao tác này.'], 403);
             }
 
-            $sale_ledger_id = intval($_POST['sale_ledger_id'] ?? 0);
-            $force_under24  = !empty($_POST['force_under24']); // nhân viên đã xác nhận cảnh báo
+            $sale_ledger_id = intval($in['sale_ledger_id'] ?? 0);
+            $force_under24  = !empty($in['force_under24']); // nhân viên đã xác nhận cảnh báo
 
             if ($sale_ledger_id <= 0) {
-                wp_send_json_error(['message' => 'Thiếu sale_ledger_id.']);
-                return;
+                return TGS_Viettel_Invoice_Pos_Service::fail(['message' => 'Thiếu sale_ledger_id.']);
             }
 
             if (!$this->flow_service) {
-                wp_send_json_error(['message' => 'Flow service chưa khởi tạo.']);
-                return;
+                return TGS_Viettel_Invoice_Pos_Service::fail(['message' => 'Flow service chưa khởi tạo.']);
             }
 
             $send_t0 = microtime(true);
             $send_timing = [];
             $process_lock = $this->acquire_sale_invoice_lock($sale_ledger_id);
             if ($process_lock === '') {
-                wp_send_json_error([
+                return TGS_Viettel_Invoice_Pos_Service::fail([
                     'message' => 'Hóa đơn của đơn này đang được xử lý. Vui lòng chờ và kiểm tra lại.',
                     'step' => 'already_processing',
                 ], 409);
-                return;
             }
 
             $existing_invoice = $this->get_latest_sale_invoice($sale_ledger_id);
@@ -4360,7 +4437,7 @@ class TGS_Viettel_Invoice_Plugin
                 $existing_uuid = sanitize_text_field($existing_invoice['issue_transaction_uuid'] ?? '');
 
                 if ($existing_state === 'done' || $existing_cqt_status === 1) {
-                    wp_send_json_success([
+                    return TGS_Viettel_Invoice_Pos_Service::ok([
                         'message' => 'Hóa đơn đã được gửi CQT trước đó, hệ thống không phát hành lại.',
                         'sale_ledger_id' => $sale_ledger_id,
                         'mode' => 'already_done',
@@ -4368,10 +4445,9 @@ class TGS_Viettel_Invoice_Plugin
                         'transaction_uuid' => $existing_uuid,
                         'tracking_id' => intval($existing_invoice['local_viettel_invoice_id'] ?? 0),
                     ]);
-                    return;
                 }
 
-                wp_send_json_error([
+                return TGS_Viettel_Invoice_Pos_Service::fail([
                     'message' => $existing_state === 'pending'
                         ? 'Hóa đơn đang được xử lý. Vui lòng chờ và kiểm tra lại.'
                         : 'Lần gửi trước chưa hoàn tất. Hãy dùng nút Gửi lại để tiếp tục mà không tạo hóa đơn trùng.',
@@ -4379,13 +4455,11 @@ class TGS_Viettel_Invoice_Plugin
                     'requires_retry' => $existing_state !== 'pending',
                     'invoice_state' => $existing_state,
                 ], 409);
-                return;
             }
 
             $settings = self::get_settings();
             if (empty($settings['username']) || empty($settings['supplier_tax_code'])) {
-                wp_send_json_error(['message' => 'Chưa cấu hình Viettel Invoice. Vui lòng vào Cấu hình để thiết lập.']);
-                return;
+                return TGS_Viettel_Invoice_Pos_Service::fail(['message' => 'Chưa cấu hình Viettel Invoice. Vui lòng vào Cấu hình để thiết lập.']);
             }
 
             /*
@@ -4395,25 +4469,23 @@ class TGS_Viettel_Invoice_Plugin
              * bill rồi đi tiếp.
              */
             if (!$this->sale_has_taxable_lines($sale_ledger_id)) {
-                wp_send_json_success([
+                return TGS_Viettel_Invoice_Pos_Service::ok([
                     'nothing_to_send' => true,
                     'step' => 'nothing_to_send',
                     'message' => 'Đơn này không có dòng nào phải gửi thuế — toàn bộ nằm ở bill Z, xử lý nội bộ.',
                 ]);
-                return;
             }
 
             // Bước 1: Build source payload từ đơn bán hàng
             $source_result = $this->flow_service->build_smart_payload_from_sale($sale_ledger_id);
             if (empty($source_result['success'])) {
-                wp_send_json_error(['message' => $source_result['message'] ?? 'Không thể đọc dữ liệu đơn bán.', 'step' => 'build']);
-                return;
+                return TGS_Viettel_Invoice_Pos_Service::fail(['message' => $source_result['message'] ?? 'Không thể đọc dữ liệu đơn bán.', 'step' => 'build']);
             }
 
             // Form review là dữ liệu người mua cuối cùng mà nhân viên xác nhận
             // trước khi phát hành. Ghi đè lên khách của đơn gốc (thường là
             // "Khách lẻ") trước khi lọc item và dựng buyerInfo cho Viettel.
-            $customer_override = $this->parse_customer_override_from_post();
+            $customer_override = $this->parse_customer_override_from_post($in);
             foreach ($customer_override as $field => $value) {
                 $source_result['payload']['customer'][$field] = $value;
             }
@@ -4431,7 +4503,7 @@ class TGS_Viettel_Invoice_Plugin
 
             // Áp dụng danh sách loại trừ trực tiếp từ frontend (source of truth).
             // Xoá hết flag danger trước, rồi set true chỉ cho item trong danh sách loại trừ.
-            $excluded_ids_raw = sanitize_text_field($_POST['excluded_item_ids'] ?? '');
+            $excluded_ids_raw = sanitize_text_field($in['excluded_item_ids'] ?? '');
             $excluded_ids = ($excluded_ids_raw !== '' && $excluded_ids_raw !== '[]')
                 ? json_decode($excluded_ids_raw, true)
                 : [];
@@ -4453,28 +4525,25 @@ class TGS_Viettel_Invoice_Plugin
             // Bước 2: Lọc + sắp xếp items theo quy tắc thuế
             $filtered_result = $this->flow_service->filter_and_sort_items_for_tax($source_result['payload']);
             if (empty($filtered_result['success'])) {
-                wp_send_json_error(['message' => $filtered_result['message'] ?? 'Lỗi lọc sản phẩm.', 'step' => 'filter']);
-                return;
+                return TGS_Viettel_Invoice_Pos_Service::fail(['message' => $filtered_result['message'] ?? 'Lỗi lọc sản phẩm.', 'step' => 'filter']);
             }
 
             $filtered_payload = $filtered_result['payload'];
 
             // Nếu có SP chính dưới 24 tháng và nhân viên chưa xác nhận → trả về cảnh báo
             if (!$force_under24 && !empty($filtered_payload['contains_under24_main_item'])) {
-                wp_send_json_error([
+                return TGS_Viettel_Invoice_Pos_Service::fail([
                     'message'      => 'Đơn hàng có sản phẩm chính dưới 24 tháng tuổi. Nhân viên cần xác nhận để tiếp tục.',
                     'step'         => 'under24_warning',
                     'under24_skus' => $filtered_payload['under24_main_sku_list'] ?? [],
                     'need_confirm' => true,
                 ]);
-                return;
             }
 
             // Bước 3: Build payload Viettel và phát hành hóa đơn
             $issue_payload_result = $this->flow_service->build_issue_payload_from_filtered($filtered_payload, $settings);
             if (empty($issue_payload_result['success'])) {
-                wp_send_json_error(['message' => $issue_payload_result['message'] ?? 'Không map được payload phát hành.', 'step' => 'build_payload']);
-                return;
+                return TGS_Viettel_Invoice_Pos_Service::fail(['message' => $issue_payload_result['message'] ?? 'Không map được payload phát hành.', 'step' => 'build_payload']);
             }
 
             $issue_payload = $issue_payload_result['payload'];
@@ -4514,11 +4583,10 @@ class TGS_Viettel_Invoice_Plugin
                     'updated_at' => current_time('mysql'),
                 ]);
 
-                wp_send_json_error([
+                return TGS_Viettel_Invoice_Pos_Service::fail([
                     'message' => $issue_result['message'] ?? 'Lỗi phát hành hóa đơn.',
                     'step'    => 'issue',
                 ]);
-                return;
             }
 
             $send_timing['issue'] = $this->timing_lap($send_t0);
@@ -4559,8 +4627,7 @@ class TGS_Viettel_Invoice_Plugin
                     'updated_at' => current_time('mysql'),
                 ]);
 
-                wp_send_json_error(['message' => 'Phát hành thành công nhưng không lấy được transactionUuid để gửi CQT.', 'step' => 'extract_uuid']);
-                return;
+                return TGS_Viettel_Invoice_Pos_Service::fail(['message' => 'Phát hành thành công nhưng không lấy được transactionUuid để gửi CQT.', 'step' => 'extract_uuid']);
             }
 
             // ─── FIX GỐC: Viettel cấp SỐ HÓA ĐƠN BẤT ĐỒNG BỘ ──────────────────
@@ -4587,8 +4654,7 @@ class TGS_Viettel_Invoice_Plugin
                 $transaction_uuid
             );
             if (empty($cqt_payload_result['success'])) {
-                wp_send_json_error(['message' => $cqt_payload_result['message'] ?? 'Không tạo được payload gửi CQT.', 'step' => 'build_cqt']);
-                return;
+                return TGS_Viettel_Invoice_Pos_Service::fail(['message' => $cqt_payload_result['message'] ?? 'Không tạo được payload gửi CQT.', 'step' => 'build_cqt']);
             }
 
             $cqt_payload = $cqt_payload_result['payload'];
@@ -4615,12 +4681,11 @@ class TGS_Viettel_Invoice_Plugin
                     'updated_at' => current_time('mysql'),
                 ]);
 
-                wp_send_json_error([
+                return TGS_Viettel_Invoice_Pos_Service::fail([
                     'message'          => $cqt_result['message'] ?? 'Lỗi gửi CQT.',
                     'step'             => 'send_cqt',
                     'transaction_uuid' => $transaction_uuid,
                 ]);
-                return;
             }
 
             $this->update_auto_flow_tracking($tracking_id, [
@@ -4651,7 +4716,7 @@ class TGS_Viettel_Invoice_Plugin
                 'timing_ms'        => $send_timing,
             ];
 
-            wp_send_json_success($response);
+            return TGS_Viettel_Invoice_Pos_Service::ok($response);
         }
 
         /** Mốc thời gian (ms) kể từ $t0 — dùng đo từng bước gửi thuế. */
@@ -4701,9 +4766,9 @@ class TGS_Viettel_Invoice_Plugin
         return !empty($item_ids);
     }
 
-    private function parse_excluded_item_ids_from_post()
+    private function parse_excluded_item_ids_from_post(array $in)
     {
-        $raw = sanitize_text_field($_POST['excluded_item_ids'] ?? '');
+        $raw = sanitize_text_field($in['excluded_item_ids'] ?? '');
         if ($raw === '' || $raw === '[]') {
             return [];
         }
@@ -4718,10 +4783,10 @@ class TGS_Viettel_Invoice_Plugin
      * Đọc thông tin người mua được nhân viên nhập tại màn review POS.
      * Chỉ cho phép các trường mà payload trung gian và Viettel Invoice hỗ trợ.
      */
-    private function parse_customer_override_from_post()
+    private function parse_customer_override_from_post(array $in)
     {
-        $raw = isset($_POST['customer_override']) && is_scalar($_POST['customer_override'])
-            ? wp_unslash((string) $_POST['customer_override'])
+        $raw = isset($in['customer_override']) && is_scalar($in['customer_override'])
+            ? wp_unslash((string) $in['customer_override'])
             : '';
         if ($raw === '' || $raw === '{}') {
             return [];
