@@ -2002,8 +2002,13 @@ class TGS_Viettel_Invoice_Plugin
             return TGS_Viettel_Invoice_Pos_Service::fail(['message' => 'Thiếu sale_ledger_id.']);
         }
 
-        $flags_raw = sanitize_text_field($in['item_flags'] ?? '');
-        $flags = json_decode($flags_raw, true);
+        /*
+         * [2026-11-25 Võ Hoàng] Sửa "Cờ dòng" xưa nay không lưu: $in là dữ liệu đã slash (như $_POST), bản cũ gọi sanitize_text_field
+         * rồi json_decode thẳng chuỗi `[{\"item_id\"…` nên luôn hỏng → "Không có cờ nào cần cập nhật". Nay bỏ slash trước khi đọc JSON
+         * (nhận cả mảng); từng giá trị vẫn ép kiểu số bên dưới.
+         */
+        $flags_raw = $in['item_flags'] ?? '';
+        $flags = is_array($flags_raw) ? wp_unslash($flags_raw) : json_decode(wp_unslash((string) $flags_raw), true);
 
         if (!is_array($flags) || empty($flags)) {
             return TGS_Viettel_Invoice_Pos_Service::ok(['message' => 'Không có cờ nào cần cập nhật.', 'updated' => 0]);
@@ -2017,12 +2022,24 @@ class TGS_Viettel_Invoice_Plugin
             return TGS_Viettel_Invoice_Pos_Service::fail(['message' => 'Cột local_ledger_item_is_under24_promo_danger chưa tồn tại. Cần chạy migration DB.']);
         }
 
+        // Chỉ sửa dòng thuộc chính đơn này (danh sách local_ledger_item_id của phiếu bán) — bản cũ sửa được dòng của đơn bất kỳ.
+        $own_ids = json_decode((string) $wpdb->get_var($wpdb->prepare(
+            'SELECT local_ledger_item_id FROM ' . TGS_TABLE_LOCAL_LEDGER . ' WHERE local_ledger_id = %d', $sale_ledger_id
+        )), true);
+        $own_ids = is_array($own_ids) ? array_map('intval', $own_ids) : [];
+
         $updated = 0;
+        $skipped = 0;
         foreach ($flags as $flag_entry) {
+            $flag_entry = is_array($flag_entry) ? $flag_entry : [];
             $item_id = intval($flag_entry['item_id'] ?? 0);
             $danger  = intval($flag_entry['danger_flag'] ?? 0) === 1 ? 1 : 0;
 
             if ($item_id <= 0) {
+                continue;
+            }
+            if (!in_array($item_id, $own_ids, true)) {
+                $skipped++;
                 continue;
             }
 
@@ -2039,7 +2056,11 @@ class TGS_Viettel_Invoice_Plugin
             }
         }
 
-        return TGS_Viettel_Invoice_Pos_Service::ok(['message' => "Đã cập nhật $updated dòng.", 'updated' => $updated]);
+        return TGS_Viettel_Invoice_Pos_Service::ok([
+            'message' => "Đã cập nhật $updated dòng." . ($skipped ? " Bỏ qua $skipped dòng không thuộc đơn này." : ''),
+            'updated' => $updated,
+            'skipped' => $skipped,
+        ]);
     }
 
     /**
