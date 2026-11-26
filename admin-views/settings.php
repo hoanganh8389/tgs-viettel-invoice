@@ -11,6 +11,13 @@ $is_multisite = is_multisite();
 <div class="container-fluid py-3" id="tgs-viettel-settings-root">
 
     <?php
+    // [2026-11-27 12:10 AM Võ Hoàng] S-HD-4 — trạng thái cài đặt kéo từ kế toán (THUE03) + nút Kéo lại; khoá ô kế toán đang khai
+    if (class_exists('TGS_Viettel_Invoice_Ketoan_Settings')) {
+        TGS_Viettel_Invoice_Ketoan_Settings::render_panel();
+    }
+    ?>
+
+    <?php
     $cluster_view = TGS_VIETTEL_INVOICE_PLUGIN_DIR . 'admin-views/cluster-settings.php';
     if (file_exists($cluster_view)) {
         require $cluster_view;

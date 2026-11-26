@@ -53,6 +53,13 @@ if (file_exists($tgs_viettel_replacement_file)) {
     require_once $tgs_viettel_replacement_file;
 }
 
+// [2026-11-27 12:10 AM Võ Hoàng] S-HD-4 — cài đặt hoá đơn điện tử khai ở kế toán (THUE03) đè ô thường của cụm / cấu hình website; mật khẩu giữ ở website.
+$tgs_viettel_ketoan_settings_file = TGS_VIETTEL_INVOICE_PLUGIN_DIR . 'includes/class-tgs-viettel-invoice-ketoan-settings.php';
+if (file_exists($tgs_viettel_ketoan_settings_file)) {
+    require_once $tgs_viettel_ketoan_settings_file;
+    TGS_Viettel_Invoice_Ketoan_Settings::init();
+}
+
 // Mã hoá JSON thân yêu cầu gửi Viettel (không phụ thuộc serialize_precision) — các lời gọi API bắt buộc có.
 require_once TGS_VIETTEL_INVOICE_PLUGIN_DIR . 'includes/class-tgs-viettel-invoice-json.php';
 

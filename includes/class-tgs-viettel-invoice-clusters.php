@@ -283,7 +283,7 @@ class TGS_Viettel_Invoice_Clusters
     {
         $blog_id = max(1, (int) $blog_id);
         if (isset($this->resolved[$blog_id])) {
-            return array_merge($legacy_settings, $this->resolved[$blog_id]);
+            return $this->with_ketoan($blog_id, array_merge($legacy_settings, $this->resolved[$blog_id]));
         }
 
         global $wpdb;
@@ -301,7 +301,7 @@ class TGS_Viettel_Invoice_Clusters
                 'legacy_fallback' => true,
                 'blog_id' => $blog_id,
             ];
-            return $legacy_settings;
+            return $this->with_ketoan($blog_id, $legacy_settings);
         }
 
         $settings = json_decode((string) $row['settings_json'], true);
@@ -327,7 +327,13 @@ class TGS_Viettel_Invoice_Clusters
             ],
         ]);
         $this->resolved[$blog_id] = $cluster_settings;
-        return array_merge($legacy_settings, $cluster_settings);
+        return $this->with_ketoan($blog_id, array_merge($legacy_settings, $cluster_settings));
+    }
+
+    // [2026-11-27 12:10 AM Võ Hoàng] S-HD-4 — ô thường khai ở kế toán (THUE03, bản đã kéo về) đè lên cụm / legacy; mật khẩu, token giữ của website
+    private function with_ketoan($blog_id, array $settings)
+    {
+        return class_exists('TGS_Viettel_Invoice_Ketoan_Settings') ? TGS_Viettel_Invoice_Ketoan_Settings::overlay($blog_id, $settings) : $settings;
     }
 
     public function get_snapshot_settings($blog_id, $invoice_record_id)
